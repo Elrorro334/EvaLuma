@@ -1,12 +1,13 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
-using System.Security.Cryptography;
 using Rodnix.EvaLuma.Data;
 using Rodnix.EvaLuma.Models;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Rodnix.EvaLuma.Controllers;
 
@@ -108,6 +109,136 @@ public class AuthController : ControllerBase
         var token = tokenHandler.CreateToken(tokenDescriptor);
 
         return tokenHandler.WriteToken(token);
+    }
+
+    [HttpGet("test-db")]
+    public async Task<IActionResult> TestDbConnection()
+    {
+        try
+        {
+            var count = await _context.Usuarios.CountAsync();
+
+            return Ok(new
+            {
+                Estatus = "Conexión exitosa",
+                TotalUsuarios = count,
+                BaseDeDatos = _context.Database.GetDbConnection().Database
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fallo al intentar conectar con la base de datos.");
+
+            return StatusCode(500, new
+            {
+                Estatus = "Error de conexión",
+                Detalle = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("usuarios")]
+    [Authorize]
+    public async Task<IActionResult> ObtenerUsuarios()
+    {
+        try
+        {
+            var usuarios = await _context.Usuarios
+                .AsNoTracking()
+                .Select(u => new
+                {
+                    u.IdUsuario,
+                    u.NombreCompleto,
+                    u.EmailCorporativo,
+                    u.Rol,
+                    u.Departamento,
+                    u.Estatus,
+                    u.FechaRegistro
+                })
+                .ToListAsync();
+
+            return Ok(usuarios);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fallo al intentar obtener la lista de usuarios.");
+
+            return StatusCode(500, new
+            {
+                Error = "Error interno del servidor al consultar el directorio."
+            });
+        }
+    }
+
+    [HttpPost("registro")]
+    [Authorize(Roles = "Administrador")]
+    [ProducesResponseType(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> RegistrarUsuario([FromBody] RegistroUsuarioRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.EmailCorporativo) ||
+            string.IsNullOrWhiteSpace(request.SsoIdentificador) ||
+            string.IsNullOrWhiteSpace(request.NombreCompleto) ||
+            string.IsNullOrWhiteSpace(request.Rol))
+        {
+            return BadRequest(new { Error = "Petición inválida. Faltan campos obligatorios." });
+        }
+
+        var rolesPermitidos = new[] { "Empleado", "Auditor", "Administrador" };
+        if (!rolesPermitidos.Contains(request.Rol))
+        {
+            return BadRequest(new { Error = "El rol especificado no es válido para esta corporación." });
+        }
+
+        var existeUsuario = await _context.Usuarios
+            .AsNoTracking()
+            .AnyAsync(u => u.EmailCorporativo == request.EmailCorporativo || u.SsoIdentificador == request.SsoIdentificador);
+
+        if (existeUsuario)
+        {
+            return BadRequest(new { Error = "El correo corporativo o el identificador SSO ya se encuentran registrados en el sistema." });
+        }
+
+        var nuevoUsuario = new Usuario
+        {
+            SsoIdentificador = request.SsoIdentificador,
+            NombreCompleto = request.NombreCompleto,
+            EmailCorporativo = request.EmailCorporativo,
+            Rol = request.Rol,
+            Departamento = request.Departamento ?? string.Empty,
+            FechaRegistro = DateTime.UtcNow,
+            Estatus = true
+        };
+
+        _context.Usuarios.Add(nuevoUsuario);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Nuevo usuario aprovisionado: {IdUsuario} por el administrador: {AdminId}",
+            nuevoUsuario.IdUsuario,
+            User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+
+        return StatusCode(201, new
+        {
+            Mensaje = "Usuario creado exitosamente.",
+            Usuario = new
+            {
+                nuevoUsuario.IdUsuario,
+                nuevoUsuario.NombreCompleto,
+                nuevoUsuario.EmailCorporativo,
+                nuevoUsuario.Rol
+            }
+        });
+    }
+
+    public class RegistroUsuarioRequest
+    {
+        public string SsoIdentificador { get; set; } = string.Empty;
+        public string NombreCompleto { get; set; } = string.Empty;
+        public string EmailCorporativo { get; set; } = string.Empty;
+        public string Rol { get; set; } = string.Empty;
+        public string? Departamento { get; set; }
     }
 
     public class SsoLoginRequest
