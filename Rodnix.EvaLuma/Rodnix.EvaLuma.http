@@ -1,6 +1,0 @@
-@Rodnix.EvaLuma_HostAddress = http://localhost:5293
-
-GET {{Rodnix.EvaLuma_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
