@@ -264,6 +264,59 @@ public class AuthController : ControllerBase
         return Ok(perfil);
     }
 
+    // DTO para recibir los datos de actualización
+    public class ActualizarPerfilDto
+    {
+        public string NombreCompleto { get; set; }
+        public string Departamento { get; set; }
+    }
+
+    [HttpPut("perfil")]
+    [Authorize]
+    public async Task<IActionResult> ActualizarPerfil([FromBody] ActualizarPerfilDto dto)
+    {
+        // Extraemos la identidad del JWT
+        var emailClaim = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+
+        if (string.IsNullOrEmpty(emailClaim))
+        {
+            return Unauthorized(new { error = "El token no contiene un identificador válido." });
+        }
+
+        // Buscamos el registro real en la base de datos
+        var usuario = await _context.Usuarios
+            .FirstOrDefaultAsync(u => u.EmailCorporativo == emailClaim);
+
+        if (usuario == null)
+        {
+            return NotFound(new { error = "Usuario no encontrado en el directorio activo." });
+        }
+
+        // Actualizamos solo los campos permitidos y validamos que no vengan vacíos
+        if (!string.IsNullOrWhiteSpace(dto.NombreCompleto))
+        {
+            usuario.NombreCompleto = dto.NombreCompleto.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.Departamento))
+        {
+            usuario.Departamento = dto.Departamento.Trim();
+        }
+
+        try
+        {
+            _context.Usuarios.Update(usuario);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { mensaje = "Perfil actualizado correctamente." });
+        }
+        catch (Exception ex)
+        {
+            // Útil para debuggear problemas de concurrencia o restricciones de base de datos
+            return StatusCode(500, new { error = "Error interno al guardar los cambios en la base de datos." });
+        }
+    }
+
     public class RegistroUsuarioRequest
     {
         public string SsoIdentificador { get; set; } = string.Empty;
