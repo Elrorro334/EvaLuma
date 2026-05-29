@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Rodnix.EvaLuma.Data;
 
@@ -11,9 +12,11 @@ using Rodnix.EvaLuma.Data;
 namespace Rodnix.EvaLuma.Migrations
 {
     [DbContext(typeof(EvalumaDbContext))]
-    partial class EvalumaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260529050717_IncorporarEstructuraBase")]
+    partial class IncorporarEstructuraBase
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
