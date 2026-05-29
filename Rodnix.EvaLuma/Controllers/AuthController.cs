@@ -232,6 +232,38 @@ public class AuthController : ControllerBase
         });
     }
 
+    [HttpGet("perfil")]
+    [Authorize]
+    public async Task<IActionResult> GetPerfil()
+    {
+        var emailClaim = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+
+        if (string.IsNullOrEmpty(emailClaim))
+        {
+            return Unauthorized(new { error = "El token no contiene un identificador válido." });
+        }
+
+        var perfil = await _context.Usuarios
+            .Where(u => u.EmailCorporativo == emailClaim)
+            .Select(u => new
+            {
+                nombreCompleto = u.NombreCompleto,
+                emailCorporativo = u.EmailCorporativo,
+                rol = u.Rol,
+                departamento = u.Departamento,
+                estatus = u.Estatus,
+                fechaRegistro = u.FechaRegistro
+            })
+            .FirstOrDefaultAsync();
+
+        if (perfil == null)
+        {
+            return NotFound(new { error = "Usuario no encontrado en el directorio activo." });
+        }
+
+        return Ok(perfil);
+    }
+
     public class RegistroUsuarioRequest
     {
         public string SsoIdentificador { get; set; } = string.Empty;
