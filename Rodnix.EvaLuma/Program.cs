@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using Microsoft.OpenApi.Models;
 using Rodnix.EvaLuma.Data;
+using Rodnix.EvaLuma.Endpoints;
 using System.Text;
 
 Env.Load();
@@ -97,5 +98,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapMotorEndpoints();
 
 app.Run();
