@@ -23,6 +23,7 @@ public class CampanasController : ControllerBase
 
     // GET: api/campanas
     [HttpGet]
+    [Route("get")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> ObtenerCampanas()
     {
@@ -45,6 +46,7 @@ public class CampanasController : ControllerBase
 
     // POST: api/campanas
     [HttpPost]
+    [Route("post")]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CrearCampana([FromBody] CrearCampanaRequest request)
