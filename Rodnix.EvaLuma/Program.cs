@@ -96,4 +96,5 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapMotorEndpoints();
+app.MapTelemetryEndpoints();
 app.Run();
