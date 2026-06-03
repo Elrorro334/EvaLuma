@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Rodnix.EvaLuma.Data;
+using Rodnix.EvaLuma.Endpoints;
 using System.Text;
 
 Env.Load();
@@ -14,7 +15,7 @@ builder.Configuration.AddEnvironmentVariables();
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
                        ?? builder.Configuration["ConnectionStrings__DefaultConnection"];
 
-// 2. CORRECCIÓN DEL ERROR: Reemplazamos AutoDetect por la versión fija (MySQL 8.0.32)
+// 2. CORRECCIÃ“N DEL ERROR: Reemplazamos AutoDetect por la versiÃ³n fija (MySQL 8.0.32)
 builder.Services.AddDbContext<EvalumaDbContext>(options =>
     options.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 32))));
 
@@ -47,7 +48,7 @@ builder.Services.AddSwaggerGen(c =>
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Description = "Autenticación JWT. Solo ingresa el token generado en el login, no necesitas escribir 'Bearer ' antes.",
+        Description = "AutenticaciÃ³n JWT. Solo ingresa el token generado en el login, no necesitas escribir 'Bearer ' antes.",
         Name = "Authorization",
         In = ParameterLocation.Header,
         Type = SecuritySchemeType.Http,
@@ -94,4 +95,5 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapMotorEndpoints();
 app.Run();
