@@ -4,126 +4,154 @@ using Microsoft.EntityFrameworkCore;
 using Rodnix.EvaLuma.Data;
 using Rodnix.EvaLuma.Models;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Rodnix.EvaLuma.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Auditor, Administrador")]
-public class CampanasController : ControllerBase
+[Authorize(Roles = "Empleado")] // Seguridad estricta: Solo los empleados interactúan aquí
+public class EvaluacionController : ControllerBase
 {
     private readonly EvalumaDbContext _context;
-    private readonly ILogger<CampanasController> _logger;
+    private readonly ILogger<EvaluacionController> _logger;
 
-    public CampanasController(EvalumaDbContext context, ILogger<CampanasController> logger)
+    public EvaluacionController(EvalumaDbContext context, ILogger<EvaluacionController> logger)
     {
         _context = context;
         _logger = logger;
     }
 
-    // GET: api/campanas
-    [HttpGet]
+    // GET: api/evaluacion/mis-asignaciones
+    [HttpGet("mis-asignaciones")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<IActionResult> ObtenerCampanas()
+    public async Task<IActionResult> ObtenerMisAsignaciones()
     {
-        var campanas = await _context.Campanas
+        // Extraemos el ID del empleado directamente de su token seguro
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!int.TryParse(userIdClaim, out int idEmpleado))
+        {
+            return Unauthorized(new { Error = "No se pudo identificar tu sesión." });
+        }
+
+        // Buscamos solo las evaluaciones asignadas a este empleado específico
+        var misEvaluaciones = await _context.AsignacionesProgreso
             .AsNoTracking()
-            .Select(c => new
+            .Include(a => a.Simulacion)
+                .ThenInclude(s => s!.Campana)
+            .Where(a => a.IdEmpleado == idEmpleado)
+            .Select(a => new
             {
-                c.IdCampana,
-                c.NombreCampana,
-                c.Descripcion,
-                c.FechaInicio,
-                c.FechaLimite,
-                c.Estricta,
-                Auditor = c.Auditor != null ? c.Auditor.NombreCompleto : "Desconocido"
+                a.IdAsignacion,
+                a.Estado,
+                a.UltimoCheckpoint,
+                a.CalificacionTemporal,
+                Simulacion = a.Simulacion!.Titulo,
+                TotalPreguntas = a.Simulacion.TotalPreguntas,
+                TiempoMinutos = a.Simulacion.TiempoEstimadoMinutos,
+                Campana = a.Simulacion.Campana!.NombreCampana,
+                FechaLimite = a.Simulacion.Campana.FechaLimite
             })
             .ToListAsync();
 
-        return Ok(campanas);
+        return Ok(misEvaluaciones);
     }
 
-    // POST: api/campanas
-    [HttpPost]
-    [ProducesResponseType(StatusCodes.Status201Created)]
+    // POST: api/evaluacion/guardar-checkpoint
+    [HttpPost("guardar-checkpoint")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> CrearCampana([FromBody] CrearCampanaRequest request)
+    public async Task<IActionResult> GuardarProgresoAsincrono([FromBody] CheckpointRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.NombreCampana) || request.FechaLimite <= request.FechaInicio)
+        // Aislamiento Transaccional: Iniciamos la transacción para asegurar propiedades ACID
+        using var transaction = await _context.Database.BeginTransactionAsync();
+
+        try
         {
-            return BadRequest(new { Error = "Datos inválidos. Verifica el nombre y que la fecha límite sea posterior a la de inicio." });
+            var asignacion = await _context.AsignacionesProgreso
+                .FirstOrDefaultAsync(a => a.IdAsignacion == request.IdAsignacion);
+
+            if (asignacion == null)
+            {
+                return NotFound(new { Error = "Asignación no encontrada." });
+            }
+
+            // Validar que el empleado que manda la petición es el dueño de la evaluación
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (asignacion.IdEmpleado.ToString() != userIdClaim)
+            {
+                return Forbid();
+            }
+
+            // Lógica de la Bitácora Inmutable (Append-Only)
+            var ultimoEvento = await _context.BitacorasAuditoria
+                .Where(b => b.IdAsignacion == request.IdAsignacion)
+                .OrderByDescending(b => b.IdEvento)
+                .FirstOrDefaultAsync();
+
+            string hashPrevio = ultimoEvento?.HashCriptografico ?? GenerarHashGenesis(request.IdAsignacion.ToString());
+
+            // Generar el nuevo hash encadenado
+            string cadenaParaHash = $"{request.IdAsignacion}-{request.AccionRealizada}-{request.TiempoRespuestaMs}-{hashPrevio}";
+            string nuevoHash = GenerarSha256(cadenaParaHash);
+
+            var nuevoRegistroAuditoria = new BitacoraAuditoria
+            {
+                IdAsignacion = request.IdAsignacion,
+                AccionRealizada = request.AccionRealizada,
+                TiempoRespuestaMs = request.TiempoRespuestaMs,
+                MarcaTiempo = DateTime.UtcNow,
+                HashPrevio = hashPrevio,
+                HashCriptografico = nuevoHash
+            };
+
+            // Actualizar el Checkpoint del Empleado
+            asignacion.UltimoCheckpoint = request.PuntoDeControlFrontEnd;
+            asignacion.FechaUltimaAccion = DateTime.UtcNow;
+            if (asignacion.Estado == "Pendiente") asignacion.Estado = "En Progreso";
+
+            // Guardar cambios en la base de datos
+            _context.BitacorasAuditoria.Add(nuevoRegistroAuditoria);
+            _context.AsignacionesProgreso.Update(asignacion);
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return Ok(new { Mensaje = "Checkpoint guardado exitosamente.", Checkpoint = asignacion.UltimoCheckpoint });
         }
-
-        // Extraer el ID del usuario autenticado desde el Token JWT
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (!int.TryParse(userIdClaim, out int idAuditor))
+        catch (Exception ex)
         {
-            return Unauthorized(new { Error = "No se pudo identificar al auditor de la sesión." });
+            await transaction.RollbackAsync();
+            _logger.LogError(ex, "Fallo transaccional al guardar checkpoint para asignación {IdAsignacion}", request.IdAsignacion);
+
+            return StatusCode(500, new { Error = "Fallo de persistencia. El frontend debe reintentar (Fallback local)." });
         }
-
-        var nuevaCampana = new Campana
-        {
-            IdAuditor = idAuditor,
-            NombreCampana = request.NombreCampana,
-            Descripcion = request.Descripcion ?? string.Empty,
-            FechaInicio = request.FechaInicio,
-            FechaLimite = request.FechaLimite,
-            Estricta = request.Estricta
-        };
-
-        _context.Campanas.Add(nuevaCampana);
-        await _context.SaveChangesAsync();
-
-        _logger.LogInformation("Nueva campaña creada: {Nombre} por Auditor ID: {AuditorId}", nuevaCampana.NombreCampana, idAuditor);
-
-        return StatusCode(201, nuevaCampana);
     }
 
-    // POST: api/campanas/{idCampana}/simulaciones
-    [HttpPost("{idCampana}/simulaciones")]
-    [ProducesResponseType(StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> AgregarSimulacion(int idCampana, [FromBody] CrearSimulacionRequest request)
+    // Funciones criptográficas privadas
+    private string GenerarSha256(string rawData)
     {
-        var campanaExiste = await _context.Campanas.AnyAsync(c => c.IdCampana == idCampana);
-        if (!campanaExiste)
+        byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawData));
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < bytes.Length; i++)
         {
-            return NotFound(new { Error = "La campaña especificada no existe." });
+            builder.Append(bytes[i].ToString("x2"));
         }
-
-        if (string.IsNullOrWhiteSpace(request.Titulo) || request.TotalPreguntas <= 0)
-        {
-            return BadRequest(new { Error = "El título es obligatorio y el total de preguntas debe ser mayor a 0." });
-        }
-
-        var nuevaSimulacion = new Simulacion
-        {
-            IdCampana = idCampana,
-            Titulo = request.Titulo,
-            TotalPreguntas = request.TotalPreguntas,
-            TiempoEstimadoMinutos = request.TiempoEstimadoMinutos
-        };
-
-        _context.Simulaciones.Add(nuevaSimulacion);
-        await _context.SaveChangesAsync();
-
-        return StatusCode(201, nuevaSimulacion);
+        return builder.ToString();
     }
 
-    // DTOs (Data Transfer Objects) para las peticiones
-    public class CrearCampanaRequest
+    private string GenerarHashGenesis(string semilla)
     {
-        public string NombreCampana { get; set; } = string.Empty;
-        public string? Descripcion { get; set; }
-        public DateTime FechaInicio { get; set; }
-        public DateTime FechaLimite { get; set; }
-        public bool Estricta { get; set; } = true;
+        return GenerarSha256($"GENESIS-EVALUMA-{semilla}");
     }
 
-    public class CrearSimulacionRequest
+    // DTO
+    public class CheckpointRequest
     {
-        public string Titulo { get; set; } = string.Empty;
-        public int TotalPreguntas { get; set; }
-        public int? TiempoEstimadoMinutos { get; set; }
+        public int IdAsignacion { get; set; }
+        public string AccionRealizada { get; set; } = string.Empty;
+        public int TiempoRespuestaMs { get; set; }
+        public string PuntoDeControlFrontEnd { get; set; } = string.Empty;
     }
 }
