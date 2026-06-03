@@ -23,6 +23,7 @@ public class CampanasController : ControllerBase
 
     // GET: api/campanas
     // Al no tener un rol específico aquí, el Empleado SÍ puede entrar a consultar
+    [Route("get")]
     [HttpGet]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> ObtenerCampanas()
@@ -60,6 +61,7 @@ public class CampanasController : ControllerBase
 
     // POST: api/campanas
     [HttpPost]
+    [Route("post")]
     [Authorize(Roles = "Auditor, Administrador")] // Candado estricto: El empleado será bloqueado si intenta crear
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
