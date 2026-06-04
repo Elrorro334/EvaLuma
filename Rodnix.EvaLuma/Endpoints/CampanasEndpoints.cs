@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -110,7 +110,24 @@ namespace Rodnix.EvaLuma.Endpoints
                 return Results.Created($"/api/campanas/{idCampana}/simulaciones/{nuevaSimulacion.IdSimulacion}", nuevaSimulacion);
             });
 
+
             // GET: Evaluaciones asignadas al empleado (Candado estricto: Solo empleados)
+
+            // GET: Obtener simulaciones de una campaña
+            group.MapGet("/{idCampana:int}/simulaciones", [Authorize] async (int idCampana, EvalumaDbContext context) =>
+            {
+                var campanaExiste = await context.Campanas.AnyAsync(c => c.IdCampana == idCampana);
+                if (!campanaExiste) return Results.NotFound(new { Error = "La campaña especificada no existe." });
+
+                var simulaciones = await context.Simulaciones
+                    .AsNoTracking()
+                    .Where(s => s.IdCampana == idCampana)
+                    .ToListAsync();
+
+                return Results.Ok(simulaciones);
+            });
+
+            // GET: Evaluaciones asignadas al empleado
             group.MapGet("/mis-asignaciones", [Authorize(Roles = "Empleado")] async (HttpContext httpContext, EvalumaDbContext context) =>
             {
                 var userIdClaim = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
