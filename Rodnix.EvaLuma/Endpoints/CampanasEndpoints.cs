@@ -17,8 +17,8 @@ namespace Rodnix.EvaLuma.Endpoints
         {
             var group = routes.MapGroup("/api/campanas").WithTags("Campañas");
 
-            // GET: Ver campañas (Abierto para cualquier logueado, incluyendo Empleados)
-            group.MapGet("/", [Authorize] async (EvalumaDbContext context, ILogger<Program> logger) =>
+            // GET: Ver campañas (Declaramos explícitamente que el Empleado tiene acceso)
+            group.MapGet("/", [Authorize(Roles = "Empleado, Auditor, Administrador")] async (EvalumaDbContext context, ILogger<Program> logger) =>
             {
                 try
                 {
@@ -46,7 +46,7 @@ namespace Rodnix.EvaLuma.Endpoints
                 }
             });
 
-            // POST: Crear campaña (Candado estricto)
+            // POST: Crear campaña (Candado estricto: Solo roles administrativos)
             group.MapPost("/", [Authorize(Roles = "Auditor, Administrador")] async (CrearCampanaDto request, HttpContext httpContext, EvalumaDbContext context) =>
             {
                 if (request.FechaLimite <= request.FechaInicio)
@@ -110,7 +110,7 @@ namespace Rodnix.EvaLuma.Endpoints
                 return Results.Created($"/api/campanas/{idCampana}/simulaciones/{nuevaSimulacion.IdSimulacion}", nuevaSimulacion);
             });
 
-            // GET: Evaluaciones asignadas al empleado
+            // GET: Evaluaciones asignadas al empleado (Candado estricto: Solo empleados)
             group.MapGet("/mis-asignaciones", [Authorize(Roles = "Empleado")] async (HttpContext httpContext, EvalumaDbContext context) =>
             {
                 var userIdClaim = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
