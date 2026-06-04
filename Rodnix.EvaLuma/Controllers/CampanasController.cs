@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Rodnix.EvaLuma.Data;
@@ -170,6 +170,26 @@ public class CampanasController : ControllerBase
         await _context.SaveChangesAsync();
 
         return StatusCode(201, nuevaSimulacion);
+    }
+
+    // GET: api/campanas/{idCampana}/simulaciones
+    [HttpGet("{idCampana}/simulaciones")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ObtenerSimulaciones(int idCampana)
+    {
+        var campanaExiste = await _context.Campanas.AnyAsync(c => c.IdCampana == idCampana);
+        if (!campanaExiste)
+        {
+            return NotFound(new { Error = "La campaña especificada no existe." });
+        }
+
+        var simulaciones = await _context.Simulaciones
+            .AsNoTracking()
+            .Where(s => s.IdCampana == idCampana)
+            .ToListAsync();
+
+        return Ok(simulaciones);
     }
 
     // DTOs para las peticiones
