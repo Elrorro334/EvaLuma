@@ -98,4 +98,5 @@ app.MapControllers();
 app.MapMotorEndpoints();
 app.MapTelemetryEndpoints();
 app.MapCampanasEndpoints();
+app.MapAuditoriaEndpoints();
 app.Run();
