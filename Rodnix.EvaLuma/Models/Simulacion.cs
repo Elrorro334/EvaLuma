@@ -24,5 +24,6 @@ namespace Rodnix.EvaLuma.Models
 
         [ForeignKey("IdCampana")]
         public virtual Campana? Campana { get; set; }
+        public ICollection<Pregunta> Preguntas { get; set; } = new List<Pregunta>();
     }
 }

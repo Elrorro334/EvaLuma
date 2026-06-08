@@ -110,18 +110,25 @@ namespace Rodnix.EvaLuma.Endpoints
                 return Results.Created($"/api/campanas/{idCampana}/simulaciones/{nuevaSimulacion.IdSimulacion}", nuevaSimulacion);
             });
 
-
-            // GET: Evaluaciones asignadas al empleado (Candado estricto: Solo empleados)
-
-            // GET: Obtener simulaciones de una campaña
-            group.MapGet("/{idCampana:int}/simulaciones", [Authorize] async (int idCampana, EvalumaDbContext context) =>
+            // GET: Obtener las simulaciones de una campaña específica (SOLO AUDITOR/ADMINISTRADOR)
+            group.MapGet("/{idCampana:int}/simulaciones", [Authorize(Roles = "Auditor, Administrador")] async (int idCampana, EvalumaDbContext context) =>
             {
                 var campanaExiste = await context.Campanas.AnyAsync(c => c.IdCampana == idCampana);
-                if (!campanaExiste) return Results.NotFound(new { Error = "La campaña especificada no existe." });
+                if (!campanaExiste)
+                {
+                    return Results.NotFound(new { Error = "La campaña especificada no existe." });
+                }
 
                 var simulaciones = await context.Simulaciones
                     .AsNoTracking()
                     .Where(s => s.IdCampana == idCampana)
+                    .Select(s => new
+                    {
+                        s.IdSimulacion,
+                        s.Titulo,
+                        s.TotalPreguntas,
+                        s.TiempoEstimadoMinutos
+                    })
                     .ToListAsync();
 
                 return Results.Ok(simulaciones);

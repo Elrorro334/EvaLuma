@@ -15,6 +15,8 @@ namespace Rodnix.EvaLuma.Data
         public DbSet<Simulacion> Simulaciones { get; set; }
         public DbSet<AsignacionProgreso> AsignacionesProgreso { get; set; }
         public DbSet<BitacoraAuditoria> BitacorasAuditoria { get; set; }
+        public DbSet<Pregunta> Preguntas { get; set; }
+        public DbSet<OpcionRespuesta> OpcionesRespuesta { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
