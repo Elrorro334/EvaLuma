@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Rodnix.EvaLuma.Data;
 using Rodnix.EvaLuma.Endpoints;
+using Rodnix.EvaLuma.Services;
 using System.Text;
 
 Env.Load();
@@ -42,6 +43,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddScoped<IQueueMonitorService, QueueMonitorService>();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "EVALUMA API", Version = "v1" });
