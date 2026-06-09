@@ -13,7 +13,8 @@ namespace Rodnix.EvaLuma.Endpoints
         public static void MapTelemetryEndpoints(this IEndpointRouteBuilder app)
         {
             var group = app.MapGroup("/api/admin/telemetry")
-                           .WithTags("Administración - Telemetría e Infraestructura");
+                           .WithTags("Administración - Telemetría e Infraestructura")
+                           .RequireAuthorization();
 
             // Endpoint 1: Recursos
             group.MapGet("/resources", Ok<ServerResourcesDto> () =>
