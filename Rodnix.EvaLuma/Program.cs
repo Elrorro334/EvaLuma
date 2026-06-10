@@ -7,6 +7,8 @@ using Rodnix.EvaLuma.Data;
 using Rodnix.EvaLuma.Endpoints;
 using Rodnix.EvaLuma.Services;
 using System.Text;
+using Rodnix.EvaLuma.Workers;
+using Rodnix.EvaLuma.Hubs;
 
 Env.Load();
 var builder = WebApplication.CreateBuilder(args);
@@ -44,6 +46,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddScoped<IQueueMonitorService, QueueMonitorService>();
+builder.Services.AddSingleton<IKafkaProducerService, KafkaProducerService>();
+builder.Services.AddTransient<IReportGeneratorService, ReportGeneratorService>();
+builder.Services.AddHostedService<MotorGuardadoWorker>();
+builder.Services.AddSignalR();
+
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "EVALUMA API", Version = "v1" });
@@ -80,7 +87,8 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins("http://localhost:3000")
               .AllowAnyHeader()
-              .AllowAnyMethod();
+              .AllowAnyMethod()
+              .AllowCredentials(); // SignalR suele requerir credenciales
     });
 });
 
@@ -102,4 +110,5 @@ app.MapTelemetryEndpoints();
 app.MapCampanasEndpoints();
 app.MapSimulacionesEndpoints();
 app.MapAuditoriaEndpoints();
+app.MapHub<MotorHub>("/hubs/motor");
 app.Run();

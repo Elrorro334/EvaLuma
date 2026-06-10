@@ -47,6 +47,41 @@ namespace Rodnix.EvaLuma.Endpoints
                 return Results.Ok(asignaciones);
             });
 
+            group.MapGet("/reporte/pdf/{id:int}", [Authorize(Roles = "Administrador,Auditor")] async (int id, EvalumaDbContext context, Rodnix.EvaLuma.Services.IReportGeneratorService reportService) =>
+            {
+                var asignacion = await context.AsignacionesProgreso
+                    .Include(a => a.Empleado)
+                    .Include(a => a.Simulacion)
+                        .ThenInclude(s => s.Campana)
+                    .FirstOrDefaultAsync(a => a.IdAsignacion == id);
+
+                if (asignacion == null) return Results.NotFound();
+
+                var historial = await context.BitacorasAuditoria
+                    .Where(b => b.IdAsignacion == id)
+                    .OrderBy(b => b.IdEvento)
+                    .ToListAsync();
+
+                var empleadoNombre = asignacion.Empleado?.NombreCompleto ?? "Desconocido";
+                var campanaNombre = asignacion.Simulacion?.Campana?.NombreCampana ?? "Sin Campaña";
+
+                var pdfBytes = reportService.GeneratePdfReport(empleadoNombre, campanaNombre, asignacion.CalificacionTemporal, historial);
+                return Results.File(pdfBytes, "application/pdf", $"Auditoria_{id}.pdf");
+            });
+
+            group.MapGet("/reporte/csv/{id:int}", [Authorize(Roles = "Administrador,Auditor")] async (int id, EvalumaDbContext context, Rodnix.EvaLuma.Services.IReportGeneratorService reportService) =>
+            {
+                var historial = await context.BitacorasAuditoria
+                    .Where(b => b.IdAsignacion == id)
+                    .OrderBy(b => b.IdEvento)
+                    .ToListAsync();
+
+                if (!historial.Any()) return Results.NotFound();
+
+                var csvBytes = reportService.GenerateCsvReport(historial);
+                return Results.File(csvBytes, "text/csv", $"Auditoria_{id}.csv");
+            });
+
             return routes;
         }
     }
