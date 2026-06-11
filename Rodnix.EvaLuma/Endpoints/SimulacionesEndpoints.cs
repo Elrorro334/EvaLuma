@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -62,6 +62,50 @@ namespace Rodnix.EvaLuma.Endpoints
                     await transaction.RollbackAsync();
                     return Results.Problem("Fallo al guardar la pregunta en la base de datos.");
                 }
+            });
+
+            // GET: Obtener todas las preguntas de una simulación (SOLO AUDITOR/ADMIN) - Expone cuál es la correcta
+            group.MapGet("/{idSimulacion:int}/preguntas-admin", [Authorize(Roles = "Auditor, Administrador")] async (int idSimulacion, EvalumaDbContext context) =>
+            {
+                var simulacion = await context.Simulaciones
+                    .AsNoTracking()
+                    .Include(s => s.Preguntas)
+                        .ThenInclude(p => p.Opciones)
+                    .FirstOrDefaultAsync(s => s.IdSimulacion == idSimulacion);
+
+                if (simulacion == null) return Results.NotFound(new { Error = "Simulación no encontrada." });
+
+                // Retornamos todo directamente, incluyendo el flag EsCorrecta
+                return Results.Ok(new
+                {
+                    simulacion.IdSimulacion,
+                    simulacion.Titulo,
+                    Preguntas = simulacion.Preguntas.Select(p => new
+                    {
+                        p.IdPregunta,
+                        p.TextoPregunta,
+                        p.ValorPuntos,
+                        Opciones = p.Opciones.Select(o => new
+                        {
+                            o.IdOpcion,
+                            o.TextoOpcion,
+                            o.EsCorrecta
+                        })
+                    })
+                });
+            });
+
+            // DELETE: Eliminar una pregunta específica (SOLO AUDITOR/ADMIN)
+            group.MapDelete("/preguntas/{idPregunta:int}", [Authorize(Roles = "Auditor, Administrador")] async (int idPregunta, EvalumaDbContext context) =>
+            {
+                var pregunta = await context.Preguntas.FindAsync(idPregunta);
+                if (pregunta == null) return Results.NotFound(new { Error = "La pregunta no existe." });
+
+                // Esto eliminará en cascada las opciones gracias a la configuración de EF Core
+                context.Preguntas.Remove(pregunta);
+                await context.SaveChangesAsync();
+
+                return Results.Ok(new { Mensaje = "Pregunta eliminada correctamente." });
             });
 
             // GET: Obtener el examen completo para el empleado (SOLO EMPLEADO)
