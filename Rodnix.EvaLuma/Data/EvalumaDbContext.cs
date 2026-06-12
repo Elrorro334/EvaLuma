@@ -1,5 +1,6 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Rodnix.EvaLuma.Models;
+using Rodnix.EvaLuma.Utils;
 
 namespace Rodnix.EvaLuma.Data
 {
@@ -28,6 +29,12 @@ namespace Rodnix.EvaLuma.Data
             {
                 entity.HasIndex(b => b.HashCriptografico)
                       .IsUnique();
+
+                entity.Property(b => b.AccionRealizada)
+                      .HasConversion(
+                          v => AesEncryptionHelper.Encrypt(v),
+                          v => AesEncryptionHelper.Decrypt(v)
+                      );
             });
         }
     }

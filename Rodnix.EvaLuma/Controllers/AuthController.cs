@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -262,6 +262,63 @@ public class AuthController : ControllerBase
         }
 
         return Ok(perfil);
+    }
+
+    [HttpGet("perfil/actividad")]
+    [Authorize]
+    public async Task<IActionResult> GetPerfilActividad()
+    {
+        var emailClaim = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+        if (string.IsNullOrEmpty(emailClaim)) return Unauthorized();
+
+        var usuario = await _context.Usuarios.AsNoTracking().FirstOrDefaultAsync(u => u.EmailCorporativo == emailClaim);
+        if (usuario == null) return NotFound();
+
+        var asignaciones = await _context.AsignacionesProgreso
+            .AsNoTracking()
+            .Where(a => a.IdEmpleado == usuario.IdUsuario)
+            .OrderByDescending(a => a.FechaInicio)
+            .Select(a => new
+            {
+                a.IdAsignacion,
+                a.IdSimulacion,
+                a.Estado,
+                a.CalificacionTemporal,
+                a.FechaInicio,
+                a.FechaUltimaAccion
+            })
+            .ToListAsync();
+
+        var bitacora = await _context.BitacorasAuditoria
+            .Include(b => b.Asignacion)
+            .AsNoTracking()
+            .Where(b => b.Asignacion != null && b.Asignacion.IdEmpleado == usuario.IdUsuario)
+            .OrderByDescending(b => b.MarcaTiempo)
+            .Take(15)
+            .Select(b => new
+            {
+                b.IdEvento,
+                b.AccionRealizada,
+                b.TiempoRespuestaMs,
+                b.MarcaTiempo,
+                b.HashCriptografico,
+                SimulacionId = b.Asignacion!.IdSimulacion
+            })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            estadisticas = new
+            {
+                totalAsignaciones = asignaciones.Count,
+                completadas = asignaciones.Count(a => a.Estado == "Completado"),
+                promedioCalificacion = asignaciones.Any(a => a.Estado == "Completado") 
+                    ? Math.Round(asignaciones.Where(a => a.Estado == "Completado").Average(a => a.CalificacionTemporal), 1) 
+                    : 0
+            },
+            asignaciones,
+            ultimosEventos = bitacora
+        });
     }
 
     // DTO para recibir los datos de actualización

@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace Rodnix.EvaLuma.DTOs
 {
@@ -22,6 +22,7 @@ namespace Rodnix.EvaLuma.DTOs
         [StringLength(500)]
         public string TextoOpcion { get; set; } = null!;
         public bool EsCorrecta { get; set; }
+        public int? IdSiguientePregunta { get; set; }
     }
 
     // --- DTOs PARA EL EMPLEADO (Modo seguro: sin revelar la respuesta correcta) ---
@@ -45,6 +46,7 @@ namespace Rodnix.EvaLuma.DTOs
     {
         public int IdOpcion { get; set; }
         public string TextoOpcion { get; set; } = string.Empty;
+        public int? IdSiguientePregunta { get; set; }
     }
 
     public class AsignarSimulacionDto

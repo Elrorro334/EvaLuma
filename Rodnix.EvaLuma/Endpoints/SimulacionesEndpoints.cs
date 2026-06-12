@@ -47,7 +47,8 @@ namespace Rodnix.EvaLuma.Endpoints
                     {
                         IdPregunta = nuevaPregunta.IdPregunta,
                         TextoOpcion = o.TextoOpcion,
-                        EsCorrecta = o.EsCorrecta
+                        EsCorrecta = o.EsCorrecta,
+                        IdSiguientePregunta = o.IdSiguientePregunta
                     }).ToList();
 
                     context.OpcionesRespuesta.AddRange(opciones);
@@ -89,7 +90,8 @@ namespace Rodnix.EvaLuma.Endpoints
                         {
                             o.IdOpcion,
                             o.TextoOpcion,
-                            o.EsCorrecta
+                            o.EsCorrecta,
+                            o.IdSiguientePregunta
                         })
                     })
                 });
@@ -133,7 +135,8 @@ namespace Rodnix.EvaLuma.Endpoints
                         Opciones = p.Opciones.Select(o => new OpcionSeguraDto
                         {
                             IdOpcion = o.IdOpcion,
-                            TextoOpcion = o.TextoOpcion
+                            TextoOpcion = o.TextoOpcion,
+                            IdSiguientePregunta = o.IdSiguientePregunta
                         }).ToList()
                     }).ToList()
                 };
@@ -142,11 +145,11 @@ namespace Rodnix.EvaLuma.Endpoints
             });
 
             // POST: Asignar una simulación a un empleado (SOLO AUDITOR/ADMINISTRADOR)
-            group.MapPost("/{idSimulacion:int}/asignar", [Authorize(Roles = "Auditor, Administrador")] async (int idSimulacion, AsignarSimulacionDto request, EvalumaDbContext context, ILogger<Program> logger) =>
+            group.MapPost("/{idSimulacion:int}/asignar", [Authorize(Roles = "Auditor, Administrador")] async (int idSimulacion, AsignarSimulacionDto request, EvalumaDbContext context, ILogger<Program> logger, Rodnix.EvaLuma.Services.IEmailService emailService) =>
             {
                 // 1. Validar que la simulación exista
-                var simulacionExiste = await context.Simulaciones.AnyAsync(s => s.IdSimulacion == idSimulacion);
-                if (!simulacionExiste) return Results.NotFound(new { Error = "La simulación especificada no existe." });
+                var simulacion = await context.Simulaciones.Include(s => s.Campana).FirstOrDefaultAsync(s => s.IdSimulacion == idSimulacion);
+                if (simulacion == null) return Results.NotFound(new { Error = "La simulación especificada no existe." });
 
                 // 2. Validar que el usuario exista y sea de rol Empleado
                 var empleado = await context.Usuarios.FirstOrDefaultAsync(u => u.IdUsuario == request.IdEmpleado);
@@ -182,22 +185,54 @@ namespace Rodnix.EvaLuma.Endpoints
                 logger.LogInformation("Simulación {IdSimulacion} asignada al empleado {IdEmpleado}. AsignacionID: {IdAsignacion}",
                     idSimulacion, request.IdEmpleado, nuevaAsignacion.IdAsignacion);
 
-                return Results.Created($"/api/simulaciones/{idSimulacion}/asignar", new
-                {
-                    Mensaje = "Evaluación asignada exitosamente al empleado.",
-                    IdAsignacion = nuevaAsignacion.IdAsignacion
-                });
+                    // Enviar correo de asignación
+                    if (!string.IsNullOrEmpty(empleado.EmailCorporativo))
+                    {
+                        var htmlTemplate = $@"
+                            <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #C3E0E6; border-radius: 12px; background-color: #F3F7F9;'>
+                                <h2 style='color: #194B64; text-align: center;'>Nueva Evaluación Asignada</h2>
+                                <p style='color: #5D7E88; font-size: 16px;'>Hola <strong>{empleado.NombreCompleto}</strong>,</p>
+                                <p style='color: #5D7E88; font-size: 16px;'>Te informamos que se te ha asignado la evaluación <strong>{simulacion.Titulo}</strong> perteneciente a la campaña <strong>{simulacion.Campana?.NombreCampana}</strong>.</p>
+                                
+                                <div style='background-color: #fff; padding: 15px; border-radius: 8px; border-left: 4px solid #13B4CE; margin: 20px 0;'>
+                                    <p style='color: #194B64; margin: 0; font-weight: bold;'>Fecha Límite: {simulacion.Campana?.FechaLimite.ToString("dd/MM/yyyy HH:mm")}</p>
+                                </div>
+
+                                <p style='color: #5D7E88; font-size: 16px;'>Por favor ingresa al portal de EVALUMA para completar tu simulación de caja blanca a la brevedad posible.</p>
+                                
+                                <div style='text-align: center; margin-top: 30px;'>
+                                    <a href='http://localhost:3000/login' style='background-color: #13B4CE; color: white; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;'>Ir al Portal EVALUMA</a>
+                                </div>
+                            </div>
+                        ";
+
+                        try {
+                            await emailService.SendEmailAsync(
+                                empleado.EmailCorporativo, 
+                                $"Nueva Evaluación Asignada: {simulacion.Titulo}", 
+                                htmlTemplate);
+                        } catch (Exception ex) {
+                            logger.LogWarning(ex, "No se pudo enviar el correo de asignación.");
+                        }
+                    }
+
+                    return Results.Created($"/api/simulaciones/{idSimulacion}/asignar", new
+                    {
+                        Mensaje = "Evaluación asignada exitosamente al empleado.",
+                        IdAsignacion = nuevaAsignacion.IdAsignacion
+                    });
             });
 
             // POST: Calificar el examen del empleado (SOLO EMPLEADO)
-            group.MapPost("/calificar", [Authorize(Roles = "Empleado")] async (EnviarExamenDto request, HttpContext httpContext, EvalumaDbContext context) =>
+            group.MapPost("/calificar", [Authorize(Roles = "Empleado")] async (EnviarExamenDto request, HttpContext httpContext, EvalumaDbContext context, Rodnix.EvaLuma.Services.IEmailService emailService, ILogger<Program> logger) =>
             {
                 var userIdClaim = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                 if (!int.TryParse(userIdClaim, out int idEmpleado)) return Results.Unauthorized();
 
                 // 1. Buscar la asignación y verificar que le pertenece a este empleado
                 var asignacion = await context.AsignacionesProgreso
-                    .Include(a => a.Simulacion)
+                    .Include(a => a.Empleado)
+                    .Include(a => a.Simulacion).ThenInclude(s => s!.Campana)
                     .FirstOrDefaultAsync(a => a.IdAsignacion == request.IdAsignacion && a.IdEmpleado == idEmpleado);
 
                 if (asignacion == null)
@@ -237,6 +272,66 @@ namespace Rodnix.EvaLuma.Endpoints
 
                 context.AsignacionesProgreso.Update(asignacion);
                 await context.SaveChangesAsync();
+
+                // Construir el detalle de respuestas para el correo
+                var detallesRespuestasHtml = new System.Text.StringBuilder();
+                foreach (var respuesta in request.Respuestas)
+                {
+                    var preguntaObj = await context.Preguntas.FirstOrDefaultAsync(p => p.IdPregunta == respuesta.IdPregunta);
+                    var opcionObj = await context.OpcionesRespuesta.FirstOrDefaultAsync(o => o.IdOpcion == respuesta.IdOpcion);
+                    var correctaObj = opcionesCorrectas.FirstOrDefault(o => o.IdPregunta == respuesta.IdPregunta);
+
+                    bool fueCorrecta = (correctaObj != null && correctaObj.IdOpcion == respuesta.IdOpcion);
+                    string icon = fueCorrecta ? "✅" : "❌";
+                    string colorBorde = fueCorrecta ? "#10b981" : "#e11d48";
+                    
+                    detallesRespuestasHtml.Append($@"
+                        <div style='margin-bottom: 15px; padding: 10px; border-radius: 6px; background-color: #f8fafc; border-left: 4px solid {colorBorde}'>
+                            <p style='margin: 0 0 5px 0; color: #194B64; font-weight: bold; font-size: 13px;'>{preguntaObj?.TextoPregunta}</p>
+                            <p style='margin: 0; color: #5D7E88; font-size: 13px;'>Tu respuesta: {opcionObj?.TextoOpcion} {icon}</p>
+                        </div>
+                    ");
+                }
+
+                // 5. Enviar correo de resultados al empleado
+                if (asignacion.Empleado != null && !string.IsNullOrEmpty(asignacion.Empleado.EmailCorporativo))
+                {
+                    string colorAprobado = calificacionFinal >= 80 ? "#10b981" : "#e11d48";
+                    string statusAprobado = calificacionFinal >= 80 ? "APROBADA" : "NO APROBADA";
+
+                    var htmlTemplate = $@"
+                        <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #C3E0E6; border-radius: 12px; background-color: #F3F7F9;'>
+                            <h2 style='color: #194B64; text-align: center;'>Resultados de tu Evaluación</h2>
+                            <p style='color: #5D7E88; font-size: 16px;'>Hola <strong>{asignacion.Empleado.NombreCompleto}</strong>,</p>
+                            <p style='color: #5D7E88; font-size: 16px;'>Has finalizado la evaluación <strong>{asignacion.Simulacion!.Titulo}</strong>. A continuación te presentamos tus resultados:</p>
+                            
+                            <div style='background-color: #fff; padding: 20px; border-radius: 8px; border: 2px solid {colorAprobado}; margin: 20px 0; text-align: center;'>
+                                <p style='color: #194B64; margin: 0 0 10px 0; font-size: 18px; font-weight: bold;'>Calificación Final</p>
+                                <p style='color: {colorAprobado}; margin: 0; font-size: 36px; font-weight: 900;'>{calificacionFinal}%</p>
+                                <p style='color: {colorAprobado}; margin: 5px 0 0 0; font-size: 14px; font-weight: bold;'>{statusAprobado}</p>
+                            </div>
+
+                            <p style='color: #5D7E88; font-size: 14px;'>Obtuviste <strong>{puntosObtenidos}</strong> puntos de <strong>{puntosTotales}</strong> totales.</p>
+                            
+                            <h3 style='color: #194B64; margin-top: 25px; border-bottom: 1px solid #C3E0E6; padding-bottom: 10px;'>Detalle de tus respuestas:</h3>
+                            {detallesRespuestasHtml}
+
+                            <p style='color: #8EACB4; font-size: 12px; text-align: center; margin-top: 30px; border-top: 1px solid #C3E0E6; padding-top: 20px;'>
+                                Tus interacciones han sido registradas criptográficamente de forma inmutable y pueden ser consultadas por auditoría interna.<br/>
+                                EVALUMA - Certificación de Compliance
+                            </p>
+                        </div>
+                    ";
+
+                    try {
+                        await emailService.SendEmailAsync(
+                            asignacion.Empleado.EmailCorporativo, 
+                            $"Resultados de tu Evaluación: {calificacionFinal}%", 
+                            htmlTemplate);
+                    } catch (Exception ex) {
+                        logger.LogWarning(ex, "No se pudo enviar el correo de resultados.");
+                    }
+                }
 
                 return Results.Ok(new
                 {

@@ -171,6 +171,9 @@ namespace Rodnix.EvaLuma.Migrations
                     b.Property<int>("IdPregunta")
                         .HasColumnType("int");
 
+                    b.Property<int?>("IdSiguientePregunta")
+                        .HasColumnType("int");
+
                     b.Property<string>("TextoOpcion")
                         .IsRequired()
                         .HasMaxLength(500)
@@ -344,7 +347,7 @@ namespace Rodnix.EvaLuma.Migrations
             modelBuilder.Entity("Rodnix.EvaLuma.Models.Pregunta", b =>
                 {
                     b.HasOne("Rodnix.EvaLuma.Models.Simulacion", "Simulacion")
-                        .WithMany()
+                        .WithMany("Preguntas")
                         .HasForeignKey("IdSimulacion")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -366,6 +369,11 @@ namespace Rodnix.EvaLuma.Migrations
             modelBuilder.Entity("Rodnix.EvaLuma.Models.Pregunta", b =>
                 {
                     b.Navigation("Opciones");
+                });
+
+            modelBuilder.Entity("Rodnix.EvaLuma.Models.Simulacion", b =>
+                {
+                    b.Navigation("Preguntas");
                 });
 #pragma warning restore 612, 618
         }

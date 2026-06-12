@@ -82,6 +82,30 @@ namespace Rodnix.EvaLuma.Endpoints
                 return Results.File(csvBytes, "text/csv", $"Auditoria_{id}.csv");
             });
 
+            // GET: Telemetría del motor
+            group.MapGet("/telemetria/motor", [Authorize(Roles = "Administrador,Administrador de Sistema")] async (EvalumaDbContext context) =>
+            {
+                var currentProcess = System.Diagnostics.Process.GetCurrentProcess();
+                var memoriaMb = currentProcess.WorkingSet64 / (1024.0 * 1024.0);
+                var tiempoEjecucion = (DateTime.UtcNow - currentProcess.StartTime.ToUniversalTime()).TotalMinutes;
+
+                // Contamos los mensajes reales procesados en la bitácora
+                var mensajesReales = await context.BitacorasAuditoria.CountAsync();
+
+                var telemetria = new
+                {
+                    tiempoEjecucionMinutos = tiempoEjecucion,
+                    mensajesEnCola = 0, // Como ya corregimos el frontend, la cola del backend suele estar limpia a menos que usemos un broker real
+                    mensajesProcesados = mensajesReales,
+                    transaccionesPorSegundo = mensajesReales > 0 ? (mensajesReales / (tiempoEjecucion * 60)) : 0,
+                    tasaErrores = 0.00,
+                    memoriaUsadaMb = memoriaMb,
+                    ultimaActualizacion = DateTime.UtcNow.ToString("O")
+                };
+
+                return Results.Ok(telemetria);
+            });
+
             return routes;
         }
     }

@@ -96,6 +96,9 @@ namespace Rodnix.EvaLuma.Endpoints
                 var existe = await context.Campanas.AnyAsync(c => c.IdCampana == idCampana);
                 if (!existe) return Results.NotFound(new { Error = "Campaña no existe." });
 
+                var simulacionExistente = await context.Simulaciones.AnyAsync(s => s.IdCampana == idCampana);
+                if (simulacionExistente) return Results.BadRequest(new { Error = "Esta campaña ya tiene una simulación (evaluación) asignada. Solo se permite una simulación por campaña." });
+
                 var nuevaSimulacion = new Simulacion
                 {
                     IdCampana = idCampana,
@@ -127,14 +130,46 @@ namespace Rodnix.EvaLuma.Endpoints
                         s.IdSimulacion,
                         s.Titulo,
                         s.TotalPreguntas,
-                        s.TiempoEstimadoMinutos
+                        s.TiempoEstimadoMinutos,
+                        Asignados = context.AsignacionesProgreso
+                                        .Where(a => a.IdSimulacion == s.IdSimulacion)
+                                        .Select(a => new { 
+                                            a.IdEmpleado, 
+                                            NombreCompleto = a.Empleado != null ? a.Empleado.NombreCompleto : "Desconocido",
+                                            Departamento = a.Empleado != null ? a.Empleado.Departamento : "Desconocido"
+                                        }).ToList()
                     })
                     .ToListAsync();
 
                 return Results.Ok(simulaciones);
             });
 
-            // GET: Evaluaciones asignadas al empleado
+            group.MapGet("/{idCampana:int}/resultados", [Authorize(Roles = "Auditor, Administrador")] async (int idCampana, EvalumaDbContext context) =>
+            {
+                var campanaExiste = await context.Campanas.AnyAsync(c => c.IdCampana == idCampana);
+                if (!campanaExiste) return Results.NotFound(new { Error = "Campaña no encontrada." });
+
+                var resultados = await context.AsignacionesProgreso
+                    .AsNoTracking()
+                    .Include(a => a.Empleado)
+                    .Include(a => a.Simulacion)
+                    .Where(a => a.Simulacion!.IdCampana == idCampana)
+                    .Select(a => new
+                    {
+                        a.IdAsignacion,
+                        Empleado = a.Empleado!.NombreCompleto,
+                        a.Empleado.EmailCorporativo,
+                        Simulacion = a.Simulacion!.Titulo,
+                        a.Estado,
+                        a.CalificacionTemporal,
+                        a.FechaInicio,
+                        a.FechaUltimaAccion
+                    })
+                    .ToListAsync();
+
+                return Results.Ok(resultados);
+            });
+
             group.MapGet("/mis-asignaciones", [Authorize(Roles = "Empleado")] async (HttpContext httpContext, EvalumaDbContext context) =>
             {
                 var userIdClaim = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -154,7 +189,8 @@ namespace Rodnix.EvaLuma.Endpoints
                         a.Simulacion.TotalPreguntas,
                         a.Simulacion.TiempoEstimadoMinutos,
                         Campana = a.Simulacion.Campana!.NombreCampana,
-                        a.Simulacion.Campana.FechaLimite
+                        a.Simulacion.Campana.FechaLimite,
+                        IdCampana = a.Simulacion.IdCampana
                     })
                     .ToListAsync();
 

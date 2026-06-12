@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Rodnix.EvaLuma.Models;
@@ -17,6 +17,8 @@ public class OpcionRespuesta
 
     // El empleado NUNCA debe ver este campo en el Frontend
     public bool EsCorrecta { get; set; }
+
+    public int? IdSiguientePregunta { get; set; }
 
     [ForeignKey("IdPregunta")]
     public Pregunta? Pregunta { get; set; }

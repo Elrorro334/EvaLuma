@@ -45,10 +45,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddAuthorization();
 builder.Services.AddScoped<IQueueMonitorService, QueueMonitorService>();
 builder.Services.AddSingleton<IKafkaProducerService, KafkaProducerService>();
 builder.Services.AddTransient<IReportGeneratorService, ReportGeneratorService>();
+builder.Services.AddTransient<IEmailService, EmailService>();
 builder.Services.AddHostedService<MotorGuardadoWorker>();
+builder.Services.AddHostedService<EmailTriggerWorker>();
 builder.Services.AddSignalR();
 
 builder.Services.AddSwaggerGen(c =>
